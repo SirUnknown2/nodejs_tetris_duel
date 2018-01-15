@@ -1,0 +1,932 @@
+<!-- This file is originally written by Stanley Lam -->
+
+<meta charset="UTF-8">
+<html>
+<META HTTP-EQUIV="PRAGMA" CONTENT="NO-CACHE">
+<head>
+    <title>TETRIS</title>
+</head>
+<body>
+    <div id="whole_body">
+        <div id="main_message" style="width:800px; height:25px; background-color: black; color: #00FF00; text-align: center"> </div>
+        <canvas id="game_canvas"  width="800" height="460"></canvas>
+        <br>
+        <table id="name_and_ip_table" style="width: 800px">
+            <tr> 
+                <td style="width: 50%">
+                    <div id="player1_name"/>
+                </td>
+                <td style="width: 50%">    
+                    <div id="player2_name"/>
+                </td>
+            </tr>
+            <tr> 
+                <td style="width: 50%">
+                    <div id="player1_ip"/>
+                </td>
+                <td style="width: 50%">    
+                    <div id="player2_ip"/>
+                </td>
+            </tr>        
+        </table>
+        <div id="player_option_bar" style="width: 800px;">
+            <div style="float: left;">
+            <button id="help_button" onClick="show_help_message()">Help</button>
+            <p style="display: inline;">Level: </p>
+            <select id="level_selector" onchange="select_function()"></select>
+            </div>
+            <div style="float: right;">
+            <p id="selected_level_text" style="display: inline;"></p> 
+            <button id="confirm_button" onClick="confirm_level_selection()">confirm</button>
+            </div>
+        </div>
+    </div>
+        
+<script src="./pixi.min.js"></script>
+<script src="./howler.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+
+<script>
+    // ======================= HTML COMPONENT DEFINES =========================
+    
+    var html_main_message = document.getElementById("main_message");
+    
+    var html_player1_name = document.getElementById("player1_name");
+    var html_player1_ip = document.getElementById("player1_ip");
+    var html_player2_name = document.getElementById("player2_name");
+    var html_player2_ip = document.getElementById("player2_ip");
+    
+    var html_player_names = [html_player1_name, html_player2_name];
+    var html_player_ips   = [html_player1_ip,   html_player2_ip];
+    
+    var html_level_selector = document.getElementById("level_selector");
+    for(var i=1; i<=20; i++) // add levels into select tag by javascript
+    {
+        var option = document.createElement("option");
+        option.text = "" + i;
+        html_level_selector.add(option);
+    }
+    var html_selected_level_text = document.getElementById("selected_level_text");
+    var html_confirm_button = document.getElementById("confirm_button");
+        
+    var player_option_bar = document.getElementById("player_option_bar");
+    player_option_bar.style.visibility = "hidden";
+    
+    // ============================ CONSTANTS ================================
+    
+    const TOTAL_PLAYERS = 2;
+    const PLAYER_1 = 0, PLAYER_2 = 1;
+    const EMPTY = 0, RED = 1, GREEN = 2, ORANGE = 3, YELLOW = 4, CYAN = 5, PURPLE = 6, BLUE = 7;
+    const SHARP_I = 0, SHARP_J = 1, SHARP_L = 2, SHARP_O = 3, SHARP_S = 4, SHARP_T = 5, SHARP_Z = 6;
+    const ZERO_DEGREE = 0, NINETY_DEGREE = 90, ONE_EIGHTY_DEGREE = 180, TWO_SEVENTY_DEGREE = 270;
+    const UP = 0, DOWN = 1, LEFT = 2, RIGHT = 3, MUTE = 4;
+    const GAME_STATE_NO_PLAYER = 0,
+          GAME_STATE_WAITING_OTHER_PLAYER = 1,
+          GAME_STATE_CHOOSE_LEVEL = 2,
+          GAME_STATE_LEVEL_MISMATCH = 3,
+          GAME_STATE_STARTING_COUNT = 4, 
+          GAME_STATE_PLAYING = 5, 
+          GAME_STATE_GAMEOVER = 6, 
+          GAME_STATE_PLAYER_DISCONNECTED = 7;
+          GAME_STATE_SERVER_SHUT_DOWN = 10;
+    const GAMEBOARD_LENGTH = 10, GAMEBOARD_WIDTH = 20;
+    const NUMBER_OF_SQUARES_IN_SHAPE = 4;
+    const SQUARE_DIMEMSION = 20;
+    const GAMEBOARD_START_X = [160, 440];
+    const GAMEBOARD_START_Y = 30;
+
+    const SCORE_TEXT_STYLE                   = { font: '16px Arial', fill: '#FFFFFF' };
+    const COUNT_DOWN_TEXT_STYLE              = { font: '64px Arial', fill: '#FFFF00' };
+
+    const PLAYERS_DISPLAY_GAMEBOARD_COLOR_SQUARES = generate_display_gameboard_color_squares();
+    const PLAYERS_DISPLAY_NEXT_SHAPE_SQUARES = generate_display_shape_color_squares();
+    const PLAYERS_DISPLAY_CURRENT_SHAPE_SQUARES = generate_display_shape_color_squares();
+    
+    var bgm = new Howl({
+          src: ['Tetris_Soundtrack.ogg'],
+          autoplay: false,
+          loop: true,
+          volume: 0.5
+        });
+
+    // ========================== CLASSES =============================
+
+    function SHAPE()
+    {
+        this.x_index = new Array(NUMBER_OF_SQUARES_IN_SHAPE),
+        this.y_index = new Array(NUMBER_OF_SQUARES_IN_SHAPE),
+        this.color = null,
+        this.rotate_degree = ZERO_DEGREE,
+        this.type_of_shape = null;
+    };
+         
+    function PLAYER()
+    {
+        this.data = {
+            name: null,
+            ip_address: null,
+            level: 1,
+            lines: 0,
+            tetris: 0,
+            confirm: false,
+            gameover: false,
+            current_shape: null,
+            next_shape: null,
+            gameboard_data: null
+        }
+        this.graphic = {
+            level_text : new PIXI.Text('', SCORE_TEXT_STYLE),
+            lines_text : new PIXI.Text('', SCORE_TEXT_STYLE),
+            tetris_text : new PIXI.Text('', SCORE_TEXT_STYLE),
+            count_down_text : new PIXI.Text('', COUNT_DOWN_TEXT_STYLE),
+            score_and_next_shape_board: new PIXI.Sprite.fromImage('./img/score_and_next_shape_board.bmp'),
+            gameboard_background : new PIXI.Sprite.fromImage('./img/gameboard_frame.bmp'),
+            draw_gameBoard : null,
+            draw_next_shape : null
+        }
+        this.interface = new PIXI.Container()
+    };
+    
+    // ========================== FUNCTIONS =============================
+    
+    function getRandomIntInclusive(min, max)
+    {
+        min = Math.ceil(min);
+        max = Math.floor(max);
+        return Math.floor(Math.random() * (max - min + 1)) + min; //The maximum is inclusive and the minimum is inclusive 
+    }
+    
+    function getColorSquareArray()
+    {
+        var colorSquareArray = [];
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/empty_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/red_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/green_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/orange_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/yellow_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/cyan_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/purple_square_20px.bmp'));
+            colorSquareArray.push(new PIXI.Sprite.fromImage('./img/blue_square_20px.bmp'));
+        return colorSquareArray;
+    }
+
+    function generate_display_gameboard_color_squares()
+    {
+        var result_array = [];
+        for(var k=0; k<TOTAL_PLAYERS; k++)
+        {
+            var TEMP_GAMEBOARD = new Array(GAMEBOARD_WIDTH);
+            for(var i=0; i<GAMEBOARD_WIDTH; i++)
+            {
+                TEMP_GAMEBOARD[i] = new Array(GAMEBOARD_LENGTH);
+                for(var j=0; j<GAMEBOARD_LENGTH; j++) TEMP_GAMEBOARD[i][j] = getColorSquareArray();
+            }
+            result_array.push(TEMP_GAMEBOARD);
+        }
+        return result_array;
+    }
+    
+    function generate_display_shape_color_squares()
+    {
+        var result_shape_array = [];
+        for(var k=0; k<TOTAL_PLAYERS; k++)
+        {
+            var TEMP_SHAPE_SQUARES = new Array(NUMBER_OF_SQUARES_IN_SHAPE);
+            for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
+                TEMP_SHAPE_SQUARES[i] = getColorSquareArray();
+            result_shape_array.push(TEMP_SHAPE_SQUARES);
+        }
+        return result_shape_array;
+    }
+
+    function draw_next_shape_squares(shape_index, id)
+    {    
+        player[id].graphic.draw_next_shape[shape_index] = PLAYERS_DISPLAY_NEXT_SHAPE_SQUARES[id][shape_index][player[id].data.next_shape.color];
+        
+        if(id == PLAYER_1)
+        {
+            switch(player[id].data.next_shape.shape)
+            {
+                // I
+                /*****************
+                 *   *   *   *   *
+                 * 0 * 1 * 2 * 3 *
+                 *   *   *   *   *
+                 *****************/                
+                case SHARP_I:
+                    player[id].graphic.draw_next_shape[0].x = 30; player[id].graphic.draw_next_shape[0].y = 40;
+                    player[id].graphic.draw_next_shape[1].x = 50; player[id].graphic.draw_next_shape[1].y = 40;
+                    player[id].graphic.draw_next_shape[2].x = 70; player[id].graphic.draw_next_shape[2].y = 40;
+                    player[id].graphic.draw_next_shape[3].x = 90; player[id].graphic.draw_next_shape[3].y = 40;
+                    break;
+                // J
+                /*****
+                 *   *
+                 * 3 *
+                 *   *
+                 *************
+                 *   *   *   *
+                 * 0 * 1 * 2 *
+                 *   *   *   *
+                 *************/
+                case SHARP_J:
+                    player[id].graphic.draw_next_shape[0].x = 40; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 60; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 80; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 40; player[id].graphic.draw_next_shape[3].y = 30;
+                    break;
+                // L
+                /*       *****
+                         *   *
+                         * 3 *
+                         *   *
+                 *************
+                 *   *   *   *
+                 * 0 * 1 * 2 *
+                 *   *   *   *
+                 *************/                    
+                case SHARP_L:
+                    player[id].graphic.draw_next_shape[0].x = 40; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 60; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 80; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 80; player[id].graphic.draw_next_shape[3].y = 30;
+                    break;
+                // O
+                /*********
+                 *   *   *
+                 * 0 * 1 *
+                 *   *   *
+                 *********
+                 *   *   *
+                 * 2 * 3 *
+                 *   *   *
+                 *********/
+                case SHARP_O:
+                    player[id].graphic.draw_next_shape[0].x = 50; player[id].graphic.draw_next_shape[0].y = 30;
+                    player[id].graphic.draw_next_shape[1].x = 70; player[id].graphic.draw_next_shape[1].y = 30;
+                    player[id].graphic.draw_next_shape[2].x = 50; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 70; player[id].graphic.draw_next_shape[3].y = 50;
+                    break;
+                // S
+                /*   *********
+                     *   *   *
+                     * 2 * 3 *
+                     *   *   *
+                 *************
+                 *   *   *
+                 * 0 * 1 *
+                 *   *   *
+                 *********   */
+                case SHARP_S:
+                    player[id].graphic.draw_next_shape[0].x = 40; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 60; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 60; player[id].graphic.draw_next_shape[2].y = 30;
+                    player[id].graphic.draw_next_shape[3].x = 80; player[id].graphic.draw_next_shape[3].y = 30;
+                    break; 
+                // T
+                /*   *****
+                     *   *
+                     * 3 *
+                     *   *
+                 *************
+                 *   *   *   *
+                 * 0 * 1 * 2 *
+                 *   *   *   *
+                 *************/
+                case SHARP_T:
+                    player[id].graphic.draw_next_shape[0].x = 40; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 60; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 80; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 60; player[id].graphic.draw_next_shape[3].y = 30;
+                    break;
+                // Z
+                /*********
+                 *   *   *
+                 * 0 * 1 *
+                 *   *   *
+                 *************
+                     *   *   *
+                     * 2 * 3 *
+                     *   *   *
+                     *********/
+                case SHARP_Z:
+                    player[id].graphic.draw_next_shape[0].x = 40; player[id].graphic.draw_next_shape[0].y = 30;
+                    player[id].graphic.draw_next_shape[1].x = 60; player[id].graphic.draw_next_shape[1].y = 30;
+                    player[id].graphic.draw_next_shape[2].x = 60; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 80; player[id].graphic.draw_next_shape[3].y = 50;
+                    break; 
+                default: alert("ERROR: TYPE OF SHAPE NOT FOUND!");
+            }
+        }
+        else if(id == PLAYER_2)
+        {
+            switch(player[id].data.next_shape.shape)
+            {
+                // I
+                /*****************
+                 *   *   *   *   *
+                 * 0 * 1 * 2 * 3 *
+                 *   *   *   *   *
+                 *****************/                
+                case SHARP_I:
+                    player[id].graphic.draw_next_shape[0].x = 690; player[id].graphic.draw_next_shape[0].y = 40;
+                    player[id].graphic.draw_next_shape[1].x = 710; player[id].graphic.draw_next_shape[1].y = 40;
+                    player[id].graphic.draw_next_shape[2].x = 730; player[id].graphic.draw_next_shape[2].y = 40;
+                    player[id].graphic.draw_next_shape[3].x = 750; player[id].graphic.draw_next_shape[3].y = 40;
+                    break;
+                // J
+                /*****
+                 *   *
+                 * 3 *
+                 *   *
+                 *************
+                 *   *   *   *
+                 * 0 * 1 * 2 *
+                 *   *   *   *
+                 *************/
+                case SHARP_J:
+                    player[id].graphic.draw_next_shape[0].x = 700; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 720; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 740; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 700; player[id].graphic.draw_next_shape[3].y = 30;
+                    break;
+                // L
+                /*       *****
+                         *   *
+                         * 3 *
+                         *   *
+                 *************
+                 *   *   *   *
+                 * 0 * 1 * 2 *
+                 *   *   *   *
+                 *************/                    
+                case SHARP_L:
+                    player[id].graphic.draw_next_shape[0].x = 700; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 720; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 740; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 740; player[id].graphic.draw_next_shape[3].y = 30;
+                    break;
+                // O
+                /*********
+                 *   *   *
+                 * 0 * 1 *
+                 *   *   *
+                 *********
+                 *   *   *
+                 * 2 * 3 *
+                 *   *   *
+                 *********/
+                case SHARP_O:
+                    player[id].graphic.draw_next_shape[0].x = 710; player[id].graphic.draw_next_shape[0].y = 30;
+                    player[id].graphic.draw_next_shape[1].x = 730; player[id].graphic.draw_next_shape[1].y = 30;
+                    player[id].graphic.draw_next_shape[2].x = 710; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 730; player[id].graphic.draw_next_shape[3].y = 50;
+                    break;
+                // S
+                /*   *********
+                     *   *   *
+                     * 2 * 3 *
+                     *   *   *
+                 *************
+                 *   *   *
+                 * 0 * 1 *
+                 *   *   *
+                 *********   */
+                case SHARP_S:
+                    player[id].graphic.draw_next_shape[0].x = 700; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 720; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 720; player[id].graphic.draw_next_shape[2].y = 30;
+                    player[id].graphic.draw_next_shape[3].x = 740; player[id].graphic.draw_next_shape[3].y = 30;
+                    break; 
+                // T
+                /*   *****
+                     *   *
+                     * 3 *
+                     *   *
+                 *************
+                 *   *   *   *
+                 * 0 * 1 * 2 *
+                 *   *   *   *
+                 *************/
+                case SHARP_T:
+                    player[id].graphic.draw_next_shape[0].x = 700; player[id].graphic.draw_next_shape[0].y = 50;
+                    player[id].graphic.draw_next_shape[1].x = 720; player[id].graphic.draw_next_shape[1].y = 50;
+                    player[id].graphic.draw_next_shape[2].x = 740; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 720; player[id].graphic.draw_next_shape[3].y = 30;
+                    break;
+                // Z
+                /*********
+                 *   *   *
+                 * 0 * 1 *
+                 *   *   *
+                 *************
+                     *   *   *
+                     * 2 * 3 *
+                     *   *   *
+                     *********/
+                case SHARP_Z:
+                    player[id].graphic.draw_next_shape[0].x = 700; player[id].graphic.draw_next_shape[0].y = 30;
+                    player[id].graphic.draw_next_shape[1].x = 720; player[id].graphic.draw_next_shape[1].y = 30;
+                    player[id].graphic.draw_next_shape[2].x = 720; player[id].graphic.draw_next_shape[2].y = 50;
+                    player[id].graphic.draw_next_shape[3].x = 740; player[id].graphic.draw_next_shape[3].y = 50;
+                    break; 
+                default: alert("ERROR: TYPE OF SHAPE NOT FOUND!");
+            }
+        }
+    }
+    
+    function draw_current_shape_squares(shape_index, id)
+    {    
+        player[id].graphic.draw_current_shape[shape_index] = PLAYERS_DISPLAY_CURRENT_SHAPE_SQUARES[id][shape_index][player[id].data.current_shape.color];    
+        player[id].graphic.draw_current_shape[shape_index].x = GAMEBOARD_START_X[id] + player[id].data.current_shape.x_index[shape_index] * SQUARE_DIMEMSION;
+        player[id].graphic.draw_current_shape[shape_index].y = GAMEBOARD_START_Y     + player[id].data.current_shape.y_index[shape_index] * SQUARE_DIMEMSION;
+    }
+    
+    function init_player_interface(id)
+    {
+        if(id == PLAYER_1)
+        {            
+            player[id].graphic.level_text.x = 67;   player[id].graphic.level_text.y = 103;
+            player[id].graphic.lines_text.x = 67;   player[id].graphic.lines_text.y = 129;
+            player[id].graphic.tetris_text.x = 67;  player[id].graphic.tetris_text.y = 155;
+            
+            player[id].graphic.gameboard_background.x = 140; player[id].graphic.gameboard_background.y = 10;
+            player[id].graphic.score_and_next_shape_board.x = 20; player[id].graphic.score_and_next_shape_board.y = 20;            
+            
+            player[id].graphic.count_down_text.x = 200; player[id].graphic.count_down_text.y = 180;
+        }
+        else if(id == PLAYER_2)
+        {
+            player[id].graphic.level_text.x = 727;  player[id].graphic.level_text.y = 103;
+            player[id].graphic.lines_text.x = 727;  player[id].graphic.lines_text.y = 129;
+            player[id].graphic.tetris_text.x = 727; player[id].graphic.tetris_text.y = 155;
+            
+            player[id].graphic.gameboard_background.x = 420; player[id].graphic.gameboard_background.y = 10;
+            player[id].graphic.score_and_next_shape_board.x = 679; player[id].graphic.score_and_next_shape_board.y = 20;            
+                        
+            player[id].graphic.count_down_text.x = 480; player[id].graphic.count_down_text.y = 180;
+        }
+        else alert("ERROR: NO SUCH OF PLAYER_ID FOR INITIALIZE INTERFACE!");
+        
+        player[id].graphic.draw_gameBoard = new Array(GAMEBOARD_WIDTH);
+        for(var i=0; i<GAMEBOARD_WIDTH; i++) 
+            player[id].graphic.draw_gameBoard[i] = new Array(GAMEBOARD_LENGTH);
+                
+        player[id].graphic.draw_next_shape = new Array(NUMBER_OF_SQUARES_IN_SHAPE);
+        player[id].graphic.draw_current_shape = new Array(NUMBER_OF_SQUARES_IN_SHAPE);
+        
+        for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
+        { 
+            player[id].graphic.draw_next_shape[i] = PLAYERS_DISPLAY_NEXT_SHAPE_SQUARES[id][i][0];
+            player[id].graphic.draw_next_shape[i].visible = false;
+            player[id].graphic.draw_current_shape[i] = PLAYERS_DISPLAY_CURRENT_SHAPE_SQUARES[id][i][0];
+            player[id].graphic.draw_current_shape[i].visible = false;    
+        }
+    }
+    
+    function show_help_message()
+    {
+        var display_message = "All Players choose the same level and click confirm to start the game.\n\nThe following is the operation keys:\nW / ARROW UP: Change the angle of the shape (clockwise)\nS / ARROW DOWN: Move the shape down a line\nA / ARROW LEFT: Move the shape to the left\nD / ARROW RIGHT: Move the shape to the right\n\nM: Mute the background music";
+        alert(display_message);
+    }
+    
+    function select_function()
+    {
+        selected_level = html_level_selector.value;
+        socket.emit('select level', parseInt(selected_level)); 
+    }
+    
+    function confirm_level_selection()
+    {
+        socket.emit('confirm level');
+    }
+    
+    // ============================ SOCKET ================================
+    
+    var socket = io();
+    //var socket = io({transports: ['websocket'], upgrade: false}); // prevent from refresh but the speed is slow
+    
+    var player = []; 
+    for(var i=0; i<TOTAL_PLAYERS; i++) {
+        player.push(new PLAYER());
+        init_player_interface(i);
+    }
+    
+    var current_game_state = -1;
+    
+    var current_players_id = [];
+        
+    var this_player_id = -1;
+    
+    var selected_level = 1;
+    
+    var allow_update = false;
+    
+    var mute_background_music = false;
+    var start_play_bgm = false;
+
+    var stage = new PIXI.Container();
+
+    var renderer = new PIXI.autoDetectRenderer(800, 460, {view: game_canvas, backgroundColor: 0x401560});
+    
+    var separated_line = new PIXI.Graphics();
+    separated_line.lineStyle(1, 0xFFFFFF, 1);
+    separated_line.moveTo(400,0);
+    separated_line.lineTo(400, 460);
+    separated_line.moveTo(401,0);
+    separated_line.lineTo(401, 460);
+    separated_line.visible = false;
+    
+    // ========== login prompt ==========
+    window.onload = function() {
+        login_prompt();
+    };
+    
+    function login_prompt()
+    {
+        while(true)
+        {
+            var name = null;
+            name = prompt("Please enter your nickname:");
+            
+            if(name.length > 15) alert("Nickname must be between 1 to 15 characters in length!");
+            else if(name == "") alert("Please enter a nickname!");
+            else if(name!="")
+            {
+                var b_valid_name = true;
+                for(var i=0; i<name.length; i++)
+                {
+                    var compare_name = name.toUpperCase();
+                    if(compare_name.charCodeAt(i) < 65 || compare_name.charCodeAt(i) > 90)
+                    {
+                        alert("Nickname should only contain uppercase and lowercase English letters!");
+                        b_valid_name = false;
+                        break;
+                    }
+                }
+                if(b_valid_name) break;
+            }
+        }
+        
+        while(true)
+        {
+            var passcode = null;
+            passcode = prompt("Please enter a passcode:");
+            if(passcode == "") alert("Please enter a passcode!");
+            else if(passcode!="") break;
+        }
+        
+        socket.emit("login request", name, passcode);
+    }
+        
+    // ========== socket ==========
+    socket.on('set state', function(new_game_state, frame_time, given_players_data, count_down_second_text){
+
+        current_game_state = new_game_state;
+
+        var selected_level_text = "";
+        
+        current_players_id = [];
+            
+        for(var k=0; k < given_players_data.length; k++)
+        {
+            current_players_id.push(given_players_data[k].player_id);
+        
+            var id = given_players_data[k].player_id;
+            
+            if(current_game_state == GAME_STATE_WAITING_OTHER_PLAYER ||current_game_state == GAME_STATE_PLAYER_DISCONNECTED)
+            {
+                for(var j=0; j<html_player_names.length; j++)
+                {
+                    html_player_names[j].style.visibility = "hidden";
+                    html_player_ips[j].style.visibility = "hidden";
+                }
+            
+                html_player_names[id].innerHTML = "Player " + (id+1) + " Name: " + given_players_data[k].name;
+                html_player_ips[id].innerHTML = "IP: " + given_players_data[k].ip_address;
+                html_player_names[id].style.visibility = "visible";
+                html_player_ips[id].style.visibility = "visible";
+            }
+            else if(current_game_state == GAME_STATE_CHOOSE_LEVEL || 
+                    current_game_state == GAME_STATE_STARTING_COUNT ||
+                    current_game_state == GAME_STATE_PLAYING ||
+                    current_game_state == GAME_STATE_GAMEOVER)
+            {
+                html_player_names[id].style.visibility = "visible";
+                html_player_ips[id].style.visibility = "visible";
+            
+                html_player_names[id].innerHTML = "Player " + (id+1) + " Name: " + given_players_data[k].name;
+                html_player_ips[id].innerHTML = "IP: " + given_players_data[k].ip_address;
+                if(given_players_data[id].confirm)
+                    selected_level_text = selected_level_text + " (Player " + (id+1) + " chose level: " + given_players_data[k].selected_level + ")";
+                else
+                    selected_level_text = selected_level_text + " (Player " + (id+1) + " level: " + given_players_data[k].selected_level + ")";
+            }
+            
+            // copy received data
+            player[id].data.level          = given_players_data[k].level;
+            player[id].data.lines          = given_players_data[k].lines;
+            player[id].data.tetris         = given_players_data[k].tetris;
+            player[id].data.confirm        = given_players_data[k].confirm;
+            player[id].data.gameover       = given_players_data[k].gameover;
+            player[id].data.current_shape  = given_players_data[k].current_shape;
+            player[id].data.next_shape     = given_players_data[k].next_shape;
+            player[id].data.gameboard_data = given_players_data[k].gameboard_data;
+
+            // update interface for each players
+            
+            // define which state will show the score text
+            if(current_game_state == GAME_STATE_STARTING_COUNT || 
+               current_game_state == GAME_STATE_PLAYING || 
+               current_game_state == GAME_STATE_GAMEOVER)
+            {
+                if(player[id].data.level < 10)             player[id].graphic.level_text.text = '         ' + player[id].data.level;
+                else if(player[id].data.level >= 10)       player[id].graphic.level_text.text = '       ' + player[id].data.level;
+                
+                if(player[id].data.lines < 10)            player[id].graphic.lines_text.text = '         ' + player[id].data.lines;
+                else if (player[id].data.lines < 100)     player[id].graphic.lines_text.text = '       ' + player[id].data.lines;
+                else if (player[id].data.lines < 1000)    player[id].graphic.lines_text.text = '     ' + player[id].data.lines;
+                else if (player[id].data.lines < 10000)   player[id].graphic.lines_text.text = '   ' + player[id].data.lines;
+                else if (player[id].data.lines >= 10000)  player[id].graphic.lines_text.text = ' ' + player[id].data.lines;
+                
+                if(player[id].data.tetris < 10)           player[id].graphic.tetris_text.text = '         ' + player[id].data.tetris;
+                else if (player[id].data.tetris < 100)    player[id].graphic.tetris_text.text = '       ' + player[id].data.tetris;
+                else if (player[id].data.tetris < 1000)   player[id].graphic.tetris_text.text = '     ' + player[id].data.tetris;
+                else if (player[id].data.tetris < 10000)  player[id].graphic.tetris_text.text = '   ' + player[id].data.tetris;
+                else if (player[id].data.tetris >= 10000) player[id].graphic.tetris_text.text = ' ' + player[id].data.tetris;
+            }
+            else
+            {
+                player[id].graphic.level_text.text = '';
+                player[id].graphic.lines_text.text = '';
+                player[id].graphic.tetris_text.text = '';
+            }
+            
+            // define the main message in different state
+            if(current_game_state == GAME_STATE_NO_PLAYER)
+            {
+                html_main_message.innerHTML = "";
+            }
+            else if(current_game_state == GAME_STATE_WAITING_OTHER_PLAYER)
+            {
+                if     (frame_time < 15) html_main_message.innerHTML = "Waiting for another player to join the game";
+                else if(frame_time < 30) html_main_message.innerHTML = "Waiting for another player to join the game.";
+                else if(frame_time < 45) html_main_message.innerHTML = "Waiting for another player to join the game..";
+                else if(frame_time < 60) html_main_message.innerHTML = "Waiting for another player to join the game...";
+            }
+            else if(current_game_state == GAME_STATE_CHOOSE_LEVEL)
+            {
+                html_main_message.innerHTML = "Game matched, both players please choose the same level to start the game";
+            }
+            else if(current_game_state == GAME_STATE_STARTING_COUNT)
+            {
+                html_main_message.innerHTML = "Get Ready";
+            }
+            else if(current_game_state == GAME_STATE_PLAYING)
+            {
+                if(player[this_player_id].data.gameover)
+                {
+                    if     (frame_time < 15) html_main_message.innerHTML = "Waiting another player to finish";
+                    else if(frame_time < 30) html_main_message.innerHTML = "Waiting another player to finish.";
+                    else if(frame_time < 45) html_main_message.innerHTML = "Waiting another player to finish..";
+                    else if(frame_time < 60) html_main_message.innerHTML = "Waiting another player to finish...";
+                }
+                else html_main_message.innerHTML = "Let's play!";
+            }
+            else if(current_game_state == GAME_STATE_GAMEOVER)
+            {
+                html_main_message.innerHTML = "Gameover, you can choose a different level and click confirm to start a new game";
+            }
+            else if(current_game_state == GAME_STATE_PLAYER_DISCONNECTED)
+            {
+                if     (frame_time < 15) html_main_message.innerHTML = "Another player disconnected, waiting for another player to join the game";
+                else if(frame_time < 30) html_main_message.innerHTML = "Another player disconnected, waiting for another player to join the game.";
+                else if(frame_time < 45) html_main_message.innerHTML = "Another player disconnected, waiting for another player to join the game..";
+                else if(frame_time < 60) html_main_message.innerHTML = "Another player disconnected, waiting for another player to join the game...";
+            }
+
+            // define the visibility of separated line
+            if(current_game_state == GAME_STATE_WAITING_OTHER_PLAYER || current_game_state == GAME_STATE_PLAYER_DISCONNECTED)
+            {
+                separated_line.visible = false;
+            }
+            else if(current_game_state == GAME_STATE_CHOOSE_LEVEL || current_game_state == GAME_STATE_STARTING_COUNT || current_game_state == GAME_STATE_PLAYING)
+            {
+                separated_line.visible = true;
+            }
+            
+            // define the select level text
+            if(current_game_state == GAME_STATE_CHOOSE_LEVEL)
+            {
+                html_selected_level_text.innerHTML = "";
+            }
+            
+            // define count down second
+            if(current_game_state == GAME_STATE_STARTING_COUNT)
+            {
+                player[id].graphic.count_down_text.text = count_down_second_text;
+            }
+            else
+            {
+                player[id].graphic.count_down_text.text = "";
+            }
+            
+            // define next shape
+            if(current_game_state == GAME_STATE_PLAYING || current_game_state == GAME_STATE_GAMEOVER)
+            {
+                for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
+                {
+                    player[id].interface.removeChild(player[id].graphic.draw_next_shape[i]);
+                    draw_next_shape_squares(i, id);
+                    player[id].graphic.draw_next_shape[i].visible = true;
+                    player[id].interface.removeChild(player[id].graphic.draw_current_shape[i]);
+                    draw_current_shape_squares(i, id);
+                    player[id].graphic.draw_current_shape[i].visible = true;
+                }
+            }
+            else
+            {
+                for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
+                {
+                    player[id].graphic.draw_next_shape[i].visible = false;
+                    player[id].graphic.draw_current_shape[i].visible = false;
+                }
+            }
+                        
+            player[id].interface.addChild(player[id].graphic.gameboard_background);
+            player[id].interface.addChild(player[id].graphic.score_and_next_shape_board);
+            player[id].interface.addChild(player[id].graphic.level_text);
+            player[id].interface.addChild(player[id].graphic.lines_text);
+            player[id].interface.addChild(player[id].graphic.tetris_text);
+            
+            for(var i=0; i<GAMEBOARD_WIDTH; i++)
+            {
+                for(var j=0; j<GAMEBOARD_LENGTH; j++)
+                {
+                    player[id].interface.removeChild(player[id].graphic.draw_gameBoard[i][j]);
+                    var color = player[id].data.gameboard_data[i][j];
+                    player[id].graphic.draw_gameBoard[i][j] = PLAYERS_DISPLAY_GAMEBOARD_COLOR_SQUARES[id][i][j][color];
+                    if(id == PLAYER_1)      player[id].graphic.draw_gameBoard[i][j].x = 160 + j * 20;
+                    else if(id == PLAYER_2) player[id].graphic.draw_gameBoard[i][j].x = 440 + j * 20;
+                    player[id].graphic.draw_gameBoard[i][j].y = 30 + i * 20;
+                    player[id].interface.addChild(player[id].graphic.draw_gameBoard[i][j]);
+                }
+            }
+        
+            for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
+            {
+                player[id].interface.addChild(player[id].graphic.draw_next_shape[i]);
+                player[id].interface.addChild(player[id].graphic.draw_current_shape[i]);
+            }
+            
+            player[id].interface.addChild(player[id].graphic.count_down_text);
+            
+            /*
+            // background music setup
+            if(current_game_state == GAME_STATE_PLAYING)
+            {    
+                if(!start_play_bgm)
+                {
+                    bgm.play();
+                    if(mute_background_music) bgm.volume(0.0);
+                    start_play_bgm = true;
+                }
+            }
+            else 
+            {
+                bgm.stop();
+                start_play_bgm = false;
+            }
+            */
+        }
+
+        // state by state
+        if(current_game_state == GAME_STATE_NO_PLAYER)
+        {
+        
+        }
+        else if(current_game_state == GAME_STATE_WAITING_OTHER_PLAYER)
+        {
+            player_option_bar.style.visibility = "hidden";
+        }
+        else if(current_game_state == GAME_STATE_CHOOSE_LEVEL || current_game_state == GAME_STATE_GAMEOVER )
+        {
+            player_option_bar.style.visibility = "visible";
+
+            if(player[this_player_id].data.confirm)
+            {
+                html_level_selector.disabled = true;
+                html_confirm_button.disabled = true;
+            }
+            else
+            {
+                html_level_selector.disabled = false;
+                html_confirm_button.disabled = false;
+            }
+            
+            html_selected_level_text.innerHTML = selected_level_text;
+        }
+        else if(current_game_state == GAME_STATE_STARTING_COUNT)
+        {
+            player_option_bar.style.visibility = "hidden";
+        }
+        else if(current_game_state == GAME_STATE_PLAYER_DISCONNECTED)
+        {
+            player_option_bar.style.visibility = "hidden";
+        }
+        
+        allow_update = true;
+    });
+    
+    socket.on('assign player id', function(given_id){
+        this_player_id = given_id;
+    });
+    
+    socket.on('wrong passcode', function(){
+        alert("Wrong passcode!");
+        login_prompt();
+    });
+
+    socket.on('not avaiable found', function(){
+        alert("The server is full!");
+        socket.disconnect();
+    });
+    
+    socket.on('disconnect', function(){
+        alert("Disconnected from server");
+        current_game_state = GAME_STATE_SERVER_SHUT_DOWN;
+        socket.disconnect();
+    });
+    
+    // =========================== KEYBOARD EVENT ==============================
+    
+    document.onkeydown = function(event){
+        if       (event.keyCode === 87) // W
+            socket.emit('key handler', UP);
+        else if(event.keyCode === 83) // S
+            socket.emit('key handler', DOWN);
+        else if(event.keyCode === 65) // A
+            socket.emit('key handler', LEFT);
+        else if(event.keyCode === 68) // D
+            socket.emit('key handler', RIGHT); 
+        else if(event.keyCode === 38) // UP
+            socket.emit('key handler', UP);
+        else if(event.keyCode === 40) // DOWN
+            socket.emit('key handler', DOWN);
+        else if(event.keyCode === 37) // LEFT
+            socket.emit('key handler', LEFT);
+        else if(event.keyCode === 39) // RIGHT
+            socket.emit('key handler', RIGHT);
+        else if(event.keyCode === 77) // M
+        {
+            if(mute_background_music)
+            {
+                bgm.volume(0.5);
+                mute_background_music = false;
+            }
+            else 
+            {
+                bgm.volume(0.0);
+                mute_background_music = true;
+            }
+        }
+    }
+    
+    // =========================== ANIMATE ==============================
+    
+    animate();
+
+    function animate()
+    {
+        requestAnimationFrame(animate);
+    
+        if(allow_update)
+        {
+            stage.addChild(separated_line);
+            
+            if(current_game_state == GAME_STATE_SERVER_SHUT_DOWN)
+            {
+                document.getElementById("whole_body").style.visibility = "hidden";
+                document.getElementById("name_and_ip_table").style.display = "none";
+            }
+            else
+            {
+                for(var i=0; i<current_players_id.length; i++)
+                    stage.addChild(player[current_players_id[i]].interface);
+                renderer.render(stage);
+                for(var i=0; i<current_players_id.length; i++)
+                    stage.removeChild(player[current_players_id[i]].interface);
+            }
+            
+            stage.removeChild(separated_line);
+            
+            allow_update = false;
+        }
+    }
+    
+</script>
+<br>
+<br>
+</body>
+</html>
+   
