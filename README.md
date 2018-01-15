@@ -1,4 +1,4 @@
-# online_tetris
+# nodejs_tetris_duel
 
 This is a tetris game that for two players dual
 and it is a demonstration of using nodejs to make an online game
