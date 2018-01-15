@@ -1,0 +1,12 @@
+{
+  "name": "Tetris",
+  "version": "1.0.0",
+  "description": "Tetris game",
+  "main": "server.js",
+  "author": "Stanley Lam",
+  "license": "WTFPL",
+  "dependencies": {
+    "express": "x.x.x",
+    "socket.io": "x.x.x"
+  }
+}
