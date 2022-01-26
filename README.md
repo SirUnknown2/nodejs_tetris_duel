@@ -9,6 +9,6 @@ Install nodejs in the computer
 
 open the comment prompt and go to the root of the folder
 first run command "npm install" install the required package
-then run command "node server.js" to start the server on port 8000
+then run command "node server.js" to start the server on port 5000
 
 the password for the client to join the game is "L"
