@@ -11,7 +11,7 @@ var server = http.createServer(app);
 var io = socketio(server);
 
 app.use(express.static(__dirname + '/client'));
-server.listen(8000);
+server.listen(5000);
 console.log("Server started.");
 
 // ========== CONSTANTS ==========
@@ -37,17 +37,17 @@ const GAME_STATE_NO_PLAYER = 0,
       GAME_STATE_WAITING_OTHER_PLAYER = 1,
       GAME_STATE_CHOOSE_LEVEL = 2,
       GAME_STATE_LEVEL_MISMATCH = 3,
-      GAME_STATE_STARTING_COUNT = 4, 
-      GAME_STATE_PLAYING = 5, 
-      GAME_STATE_GAMEOVER = 6, 
+      GAME_STATE_STARTING_COUNT = 4,
+      GAME_STATE_PLAYING = 5,
+      GAME_STATE_GAMEOVER = 6,
       GAME_STATE_PLAYER_DISCONNECTED = 7;
-      
-const LEVEL_GAME_UPDATE_TIME = [999999, 
-        60, 55, 50, 45, 40, 
-        35, 30, 25, 20, 15, 
-        14, 13, 12, 11, 10, 
+
+const LEVEL_GAME_UPDATE_TIME = [999999,
+        60, 55, 50, 45, 40,
+        35, 30, 25, 20, 15,
+        14, 13, 12, 11, 10,
         9,  8,  7,  6,  5];
-        
+
 const NEXT_LEVEL_REQUIRED_LINES = [0, 20, 20, 20, 20, 20,
         25, 25, 25, 25, 25,
         30, 30, 30, 30, 30,
@@ -100,7 +100,7 @@ function getRandomIntInclusive(min, max)
 {
     min = Math.ceil(min);
     max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min + 1)) + min; //The maximum is inclusive and the minimum is inclusive 
+    return Math.floor(Math.random() * (max - min + 1)) + min; //The maximum is inclusive and the minimum is inclusive
 };
 
 
@@ -117,7 +117,7 @@ var all_players_selected_level = -1;
 
 var players_obj = {};
 
-var index_array = []; 
+var index_array = [];
 for(var i=0; i<TOTAL_PLAYERS; i++) index_array.push(i);
 
 var shape_array = new Array(NUMBER_OF_SHAPE_GENERATED);
@@ -130,9 +130,9 @@ function generateFiftyThousandShapesNumber()
 
 io.on('connection', function(socket){
 
-    var get_ip_address = 
-             socket.request.headers['x-forwarded-for'] || 
-             socket.request.connection.remoteAddress || 
+    var get_ip_address =
+             socket.request.headers['x-forwarded-for'] ||
+             socket.request.connection.remoteAddress ||
              socket.request.socket.remoteAddress ||
              socket.request.connection.socket.remoteAddress;
     var ip_address = get_ip_address.replace(/^.*:/, '');
@@ -141,7 +141,7 @@ io.on('connection', function(socket){
         if( passcode == "L" )
         {
             var players_size = Object.keys(players_obj).length;
-            
+
             if(players_size < TOTAL_PLAYERS)
             {
                 players_obj[socket.id] = new PLAYER_DATA();
@@ -160,7 +160,7 @@ io.on('connection', function(socket){
                 players_obj[socket.id].client_package.gameboard_data = init_gameboard();
 
                 players_size++;
-                
+
                 if(current_game_state == GAME_STATE_NO_PLAYER) // first player connects to the server
                 {
                     current_game_state = GAME_STATE_WAITING_OTHER_PLAYER;
@@ -172,7 +172,7 @@ io.on('connection', function(socket){
 
                 var player_id = players_obj[socket.id].client_package.player_id;
                 io.to(socket.id).emit('assign player id', player_id);
-                
+
                 // print out the new user information in the console of the server
                 console.log("new user: " + name + " - " + ip_address + " logged.");
             }
@@ -180,17 +180,17 @@ io.on('connection', function(socket){
         }
         else io.to(socket.id).emit('wrong passcode');
     });
-    
+
     socket.on('disconnect',function(){
-        
+
         if(socket.id in players_obj){
 
             console.log(players_obj[socket.id].client_package.name +" - " + players_obj[socket.id].client_package.ip_address + " left.");
-            
+
             index_array.push(players_obj[socket.id].client_package.player_id); // recycle back the player id
-            
+
             delete players_obj[socket.id];
-            
+
             // reset game state based on the current state
             switch(current_game_state)
             {
@@ -241,7 +241,7 @@ io.on('connection', function(socket){
             }
         }
     });
-    
+
     socket.on('select level',function(player_selected_level){
         if(!players_obj[socket.id].client_package.confirm)
         {
@@ -252,25 +252,25 @@ io.on('connection', function(socket){
                     players_obj[sock].client_package.confirm = false;
         }
     });
-    
+
     socket.on('confirm level',function(){
         if(!players_obj[socket.id].client_package.confirm)
         {
             players_obj[socket.id].client_package.confirm = true;
-            
+
             var all_players_agreed_selected_level = players_obj[socket.id].client_package.selected_level;
-            
+
             for(sock in players_obj)
                 if(players_obj[sock].client_package.selected_level != all_players_agreed_selected_level)
                     players_obj[sock].client_package.confirm = false;
-            
+
             var all_players_confirm = true;
             for(sock in players_obj)
                 if(!players_obj[sock].client_package.confirm)
                     all_players_confirm = false;
-            
+
             if(all_players_confirm)
-            {        
+            {
                 for(sock in players_obj)
                 {
                     players_obj[sock].client_package.level = all_players_agreed_selected_level;
@@ -298,7 +298,7 @@ io.on('connection', function(socket){
             {
                 var gameboard = players_obj[socket.id].client_package.gameboard_data;
                 var current_shape = players_obj[socket.id].client_package.current_shape;
-                
+
                 if(keyIndex == UP)
                 {
                     switch(current_shape.type_of_shape)
@@ -306,7 +306,7 @@ io.on('connection', function(socket){
                         case SHARP_I:
                         {
                             var x = current_shape.x_index[1], y = current_shape.y_index[1];  // the pivot index of all shapes is 1
-                            
+
                             /*****************
                              *   *   *   *   *
                              * 0 * 1 * 2 * 3 *
@@ -361,13 +361,13 @@ io.on('connection', function(socket){
                              *   *   *   *   *
                              *****************/
                             else console.log("ERROR in I shape: No such rotating degree!");
-                            
+
                             break;
                         }
                         case SHARP_J:
                         {
                             var x = current_shape.x_index[1], y = current_shape.y_index[1];
-                            
+
                             /*****
                              *   *
                              * 3 *
@@ -481,7 +481,7 @@ io.on('connection', function(socket){
                         case SHARP_L:
                         {
                             var x = current_shape.x_index[1], y = current_shape.y_index[1];
-                            
+
                             /*       *****
                                      *   *
                                      * 3 *
@@ -854,7 +854,7 @@ io.on('connection', function(socket){
                     }
                 }
                 else if(keyIndex == DOWN)
-                {        
+                {
                     move_down_a_line(socket.id);
                 }
                 else if(keyIndex == LEFT)
@@ -868,13 +868,13 @@ io.on('connection', function(socket){
                             isGoodToMoveLeft = false;
                             break;
                         }
-                    }                    
+                    }
                     if(isGoodToMoveLeft)
                     {
                         for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
                             current_shape.x_index[i]--;
                     }
-                }            
+                }
                 else if(keyIndex == RIGHT)
                 {
                     var isGoodToMoveRight = true;
@@ -886,7 +886,7 @@ io.on('connection', function(socket){
                             isGoodToMoveRight = false;
                             break;
                         }
-                    }                    
+                    }
                     if(isGoodToMoveRight)
                     {
                         for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
@@ -902,7 +902,7 @@ function move_down_a_line(socket_id)
 {
     var gameboard = players_obj[socket_id].client_package.gameboard_data;
     var current_shape = players_obj[socket_id].client_package.current_shape;
-    
+
     var isGoodToMoveDown = true;
     for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
     {
@@ -913,7 +913,7 @@ function move_down_a_line(socket_id)
             break;
         }
     }
-    
+
     if(isGoodToMoveDown)
     {
         for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
@@ -923,20 +923,20 @@ function move_down_a_line(socket_id)
     {
         for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
         {
-            var x = current_shape.x_index[i], y = current_shape.y_index[i];    
+            var x = current_shape.x_index[i], y = current_shape.y_index[i];
             gameboard[y][x] = current_shape.color;
         }
 
-        // check whether renew shape array 
+        // check whether renew shape array
         // (not renew right now, just generated 50000 elements shape array in default, if it reaches the max, just loop again the array)
-        
+
         // next shape
         players_obj[socket_id].shape_count = (players_obj[socket_id].shape_count+1) % NUMBER_OF_SHAPE_GENERATED;
         var next_shape_index = players_obj[socket_id].shape_count;
         // assign new shapes to the player
         players_obj[socket_id].client_package.current_shape = createShapeSquare(shape_array[next_shape_index]);
         players_obj[socket_id].client_package.next_shape = shape_array[players_obj[socket_id].shape_count + 1];
-        
+
         // check whether the user is gameover
         var check_current_shape = players_obj[socket_id].client_package.current_shape;
         for(var i=0; i<NUMBER_OF_SQUARES_IN_SHAPE; i++)
@@ -958,9 +958,9 @@ function move_down_a_line(socket_id)
             while(true)
             {
                 if(checkNumOfLines < 0) break;
-                
+
                 var i = checkNumOfLines;
-                
+
                 var isLineFull = true;
                 for(var j=0; j<GAMEBOARD_LENGTH; j++) // check the specific row
                 {
@@ -970,7 +970,7 @@ function move_down_a_line(socket_id)
                         break;
                     }
                 }
-                
+
                 if(isLineFull)
                 {
                     // move all rows that is above the eliminated line a line down
@@ -979,9 +979,9 @@ function move_down_a_line(socket_id)
                         for(var n=0; n<GAMEBOARD_LENGTH; n++)
                             gameboard[m+1][n] = gameboard[m][n];
                     }
-                    
+
                     for(var k=0; k<GAMEBOARD_LENGTH; k++) gameboard[0][k] = EMPTY; // the squares of the top row set to empty
-                    
+
                     eliminatedLines++;
                 }
                 else checkNumOfLines--; // check next line
@@ -1049,29 +1049,29 @@ function createShapeSquare(shape_data)
             shape.x_index[0] = SHAPE_INITIAL_X_INDEX + 1; shape.y_index[0] = SHAPE_INITIAL_Y_INDEX + 0;
             shape.x_index[1] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[1] = SHAPE_INITIAL_Y_INDEX + 0;
             shape.x_index[2] = SHAPE_INITIAL_X_INDEX + 1; shape.y_index[2] = SHAPE_INITIAL_Y_INDEX + 1;
-            shape.x_index[3] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[3] = SHAPE_INITIAL_Y_INDEX + 1;                  
+            shape.x_index[3] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[3] = SHAPE_INITIAL_Y_INDEX + 1;
             break;
         case SHARP_S:
             shape.x_index[0] = SHAPE_INITIAL_X_INDEX + 1; shape.y_index[0] = SHAPE_INITIAL_Y_INDEX + 1;
             shape.x_index[1] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[1] = SHAPE_INITIAL_Y_INDEX + 1;
             shape.x_index[2] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[2] = SHAPE_INITIAL_Y_INDEX + 0;
             shape.x_index[3] = SHAPE_INITIAL_X_INDEX + 3; shape.y_index[3] = SHAPE_INITIAL_Y_INDEX + 0;
-            break; 
+            break;
         case SHARP_T:
             shape.x_index[0] = SHAPE_INITIAL_X_INDEX + 1; shape.y_index[0] = SHAPE_INITIAL_Y_INDEX + 1;
             shape.x_index[1] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[1] = SHAPE_INITIAL_Y_INDEX + 1;
             shape.x_index[2] = SHAPE_INITIAL_X_INDEX + 3; shape.y_index[2] = SHAPE_INITIAL_Y_INDEX + 1;
             shape.x_index[3] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[3] = SHAPE_INITIAL_Y_INDEX + 0;
-            break; 
+            break;
         case SHARP_Z:
             shape.x_index[0] = SHAPE_INITIAL_X_INDEX + 1; shape.y_index[0] = SHAPE_INITIAL_Y_INDEX + 0;
             shape.x_index[1] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[1] = SHAPE_INITIAL_Y_INDEX + 1;
             shape.x_index[2] = SHAPE_INITIAL_X_INDEX + 2; shape.y_index[2] = SHAPE_INITIAL_Y_INDEX + 0;
             shape.x_index[3] = SHAPE_INITIAL_X_INDEX + 3; shape.y_index[3] = SHAPE_INITIAL_Y_INDEX + 1;
-            break; 
+            break;
         default: alert("ERROR: TYPE OF SHAPE NOT FOUND!");
     }
-    
+
     return shape;
 }
 
@@ -1080,7 +1080,7 @@ setInterval(function(){
     //console.log(update_frame_time);
     update_frame_time++;
     update_frame_time %= FPS;
-    
+
     if(current_game_state == GAME_STATE_STARTING_COUNT)
     {
         update_count_down_time_frame++;
@@ -1110,7 +1110,7 @@ setInterval(function(){
                 update_count_down_time_frame = 0;
             }
             for(socket_id in players_obj)
-                io.to(socket_id).emit('set state', current_game_state, update_frame_time, get_players_send_data(), display_count_down);    
+                io.to(socket_id).emit('set state', current_game_state, update_frame_time, get_players_send_data(), display_count_down);
             current_count_second--;
         }
     }
@@ -1134,7 +1134,7 @@ setInterval(function(){
     else
     {
         for(socket_id in players_obj)
-            io.to(socket_id).emit('set state', current_game_state, update_frame_time, get_players_send_data(), '');    
+            io.to(socket_id).emit('set state', current_game_state, update_frame_time, get_players_send_data(), '');
     }
-    
+
 }, 1000/FPS);
