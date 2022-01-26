@@ -4,7 +4,7 @@
   "description": "Tetris game",
   "main": "server.js",
   "author": "Stanley Lam",
-  "license": "WTFPL",
+  "license": "GPLv3",
   "dependencies": {
     "express": "x.x.x",
     "socket.io": "x.x.x"
